@@ -85,7 +85,7 @@ def gradient_calc(image):
             elif dx == 0 and dy < 0:
                 phi[i,j] = -90
             else:
-                phi[i,j] = np.arctan(dy/dx)/np.pi*180
+                phi[i,j] = np.arctan2(dy,dx)/np.pi*180
                 
             # magnitude
             M[i-1, j-1] = (dx**2+dy**2)**0.5
