@@ -1,0 +1,8 @@
+# ignore unlicensed images
+ref/
+
+# ignore compiled Python files
+__pycache__
+
+# ignore any batch files
+.bat
