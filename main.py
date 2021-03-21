@@ -62,7 +62,7 @@ def main(argv):
                 sys.exit(2)
                 
     # prepare file names
-    file_suffix = image.rsplit("/", 1)[1].rsplit(".", 1)[0] + '_c_' + str(connect) + '_m_' + str(minima) + '_n_' + str(noise) + '_s_' + str(sigma) + '_k_' + str(kernel_size) 
+    file_suffix = image.rsplit("/", 1)[1].rsplit(".", 1)[0] + '_n_' + str(noise)
     logfile = 'out/' + file_suffix + '_info.txt'
     open(logfile, 'w').close()
     
@@ -73,35 +73,21 @@ def main(argv):
     # load reference images
     refs = []
     for filename in os.listdir("ref/"):
-        refs.append(cv2.imread("ref/" + filename, cv2.IMREAD_COLOR))
+        refs.append(cv2.cvtColor(cv2.imread("ref/" + filename, cv2.IMREAD_COLOR), cv2.COLOR_BGR2GRAY))
     
-    # load test image
-    img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
-    
-    # pre-process image
+    # build r-table
     start = timer()
-    if kernel_size > 1 or noise != 0.0:
-        # add noise
-        if noise != 0.0:
-            pc_noise = np.max(img)*noise/100
-            noise_arr = np.random.randint(-1*pc_noise, high=pc_noise, size=img.shape)
-            img = img + noise_arr
-            
-            for i in range(0,img.shape[0]):
-                for j in range(0,img.shape[1]):
-                    if img[i,j] < 0:
-                        img[i,j] = 0
-        
-        # pad image, blur image, and crop to original image
-        if kernel_size > 1:
-            pad_amount = int((kernel_size-1))
-            pad = pad_array(img, pad_amount)
-            H = Gaussian2D(kernel_size, sigma)
-            img = (image_filter2d(pad, H)[pad_amount:pad_amount+img.shape[0], pad_amount:pad_amount+img.shape[1]]).round(decimals=2)
-    
-    x = img
+    table = buildRtable(refs, (140,180), verbose)
     end = timer()
-    log("\nTime taken for preprocessing: {0:.3f}".format(end - start), file=logfile)
+    log("Time taken to build r-table: {}".format(end-start))
+    
+    
+    # build accumulator
+    img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
+    start = timer()
+    accum = genAccumulator(img, table, verbose)
+    end = timer()
+    log("Time taken to build accumulator: {}".format(end-start))
     
     
     

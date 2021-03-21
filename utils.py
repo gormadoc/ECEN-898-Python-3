@@ -12,6 +12,8 @@
 import sys, getopt, os
 import math
 import numpy as np
+import copy
+import cv2
 
 
 def log(message, file=None):
@@ -63,7 +65,7 @@ def image_filter2d(img, kernel):
     
 def gradient_calc(image):
     # get some arrays ready
-    sobx = np.array[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+    sobx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
     soby = sobx.transpose()
     phi = np.zeros(image.shape)
     M = np.zeros(image.shape)
@@ -71,19 +73,19 @@ def gradient_calc(image):
     # need to slightly pad but we don't need to calculate the new borders
     img = pad_array(image, 1)
     x, y = img.shape
-    for i in range(1, xx-1):
-        for j in range(1, xx-1):
+    for i in range(1, x-2):
+        for j in range(1, y-2):
             # calculate both at once rather than separately
-            dx = -1*img[i-1,j-1] -2*img[i-1,j] -1*imag[i-1,j+1] +img[i+1,j-1] +2*img[i+1,j] +imag[i+1,j+1] 
-            dy = -1*img[i-1,j-1] -2*img[i,j-1] -1*imag[i+1,j-1] +img[i-1,j+1] +2*img[i,j+1] +imag[i+1,j+1]
+            dx = -1*img[i-1,j-1] -2*img[i-1,j] -1*img[i-1,j+1] +img[i+1,j-1] +2*img[i+1,j] +img[i+1,j+1] 
+            dy = -1*img[i-1,j-1] -2*img[i,j-1] -1*img[i+1,j-1] +img[i-1,j+1] +2*img[i,j+1] +img[i+1,j+1]
             
             # division by zero is undefined
-            if dx[row,col] == 0 and dy[row,col] > 0:
-                phi[row,col] = 90
-            elif dx[row,col] == 0 and dy[row,col] < 0:
-                phi[row,col] = -90
+            if dx == 0 and dy > 0:
+                phi[i,j] = 90
+            elif dx == 0 and dy < 0:
+                phi[i,j] = -90
             else:
-                phi[row,col] = np.arctan(dy[row,col]/dx[row,col])/np.pi*180
+                phi[i,j] = np.arctan(dy/dx)/np.pi*180
                 
             # magnitude
             M[i-1, j-1] = (dx**2+dy**2)**0.5
@@ -150,19 +152,169 @@ def neighbors(image, p, connectedness=8):
     return n
     
     
-def buildRtable(images):
-    
+def buildRtable(images, point, verbose=False):
+    r_table = {}
     for img in images:
         # gradient calculations
         phi,M = gradient_calc(img)
+        threshold = (40, 20)
         
-        # thresholding
-    return []
+        # we can ready some queues for threshold information
+        strong_queue = []
+        weak_list = []
+    
+        # non-maxima suppression and edge candidate detection
+        N = copy.deepcopy(M)
+        for row in range(0, M.shape[0]-1):
+            for col in range(0, M.shape[1]-1):
+                p = phi[row,col]
+                # eight cases decomposed into four by arctan range (-90deg<->90deg)
+                if p < 22.5 and p >= -22.5: # 4,6
+                    coords = [[row-1, col], [row+1, col]]
+                elif p < 67.5 and p >= 22.5: # 1,9
+                    coords = [[row-1, col-1], [row+1, col+1]]
+                elif p <=90 and p >= 67.5 or p <= -67.5 and p >= -90: # 2, 8
+                    coords = [[row, col+1], [row, col-1]]
+                else: # 3, 7
+                    coords = [[row-1, col+1], [row+1, col-1]]
+                if M[row, col] <= M[coords[0][0], coords[0][1]] or M[row, col] <= M[coords[1][0], coords[1][1]]:
+                    N[row,col] = 0
+                
+                # threshold control; values just for informative picture
+                if N[row,col] > threshold[1]:
+                    N[row,col] = 128
+                    strong_queue.append((row,col))
+                elif N[row,col] > threshold[0]:
+                    N[row,col] = 64
+                    weak_list.append((row, col))
+                else:
+                    N[row,col] = 0
+        
+        # edge strengthening
+        while len(strong_queue) > 0:
+            # get pixel at head
+            px = strong_queue[-1]
+        
+            # remove the pixel from the queue
+            strong_queue.pop(-1)
+                
+            # begin processing
+            N[px[0], px[1]] = 255
+            for i in range(-1,2):
+                for j in range(-1,2):
+                    # use our weak flag value to speed things up
+                    if N[px[0]+i, px[1]+j] == 64:
+                        # set it to the strong-but-not-processed value (which is unused due to the queue)
+                        N[px[0]+i, px[1]+j] = 128
+                        
+                        # pop the pixel from the weak_list and add it to the queue
+                        weak_list.pop(weak_list.index((px[0]+i, px[1]+j)))
+                        strong_queue.append((px[0]+i, px[1]+j))
+        
+        # cull unverified weak edges
+        for px in weak_list:
+            N[px[0], px[1]] = 0
+            
+        if verbose:
+            cv2.imwrite("out/ref_edges.png", N)
+            
+        # build r-table
+        for i in range(0, N.shape[0]):
+            for j in range(0, N.shape[1]):
+                if N[i,j] == 255:
+                    theta = phi[i,j]
+                    rho = (i-point[0], j-point[1]) # just a displacement vector
+                    if theta in r_table.keys():
+                        if rho not in r_table[theta]:
+                            r_table[theta][rho] = M[i,j]
+                        else:
+                            r_table[theta][rho] += M[i,j]
+                    else:
+                        r_table[theta] = {rho: M[i,j]}
+    return r_table
     
     
-def genAccumulator(r_table):
-    return np.array(zeros, shape=(1,1))
+def genAccumulator(image, r_table, verbose=False):
+    ''' Find boundaries in image '''
+    # gradient calculations
+    phi,M = gradient_calc(image)
+    threshold = (40, 20)
     
+    # we can ready some queues for threshold information
+    strong_queue = []
+    weak_list = []
+
+    # non-maxima suppression and edge candidate detection
+    N = copy.deepcopy(M)
+    for row in range(1, M.shape[0]-1):
+        for col in range(1, M.shape[1]-1):
+            p = phi[row,col]
+            # eight cases decomposed into four by arctan range (-90deg<->90deg)
+            if p < 22.5 and p >= -22.5: # 4,6
+                coords = [[row-1, col], [row+1, col]]
+            elif p < 67.5 and p >= 22.5: # 1,9
+                coords = [[row-1, col-1], [row+1, col+1]]
+            elif p <=90 and p >= 67.5 or p <= -67.5 and p >= -90: # 2, 8
+                coords = [[row, col+1], [row, col-1]]
+            else: # 3, 7
+                coords = [[row-1, col+1], [row+1, col-1]]
+            if M[row, col] <= M[coords[0][0], coords[0][1]] or M[row, col] <= M[coords[1][0], coords[1][1]]:
+                N[row,col] = 0
+            
+            # threshold control; values just for informative picture
+            if N[row,col] > threshold[1]:
+                N[row,col] = 128
+                strong_queue.append((row,col))
+            elif N[row,col] > threshold[0]:
+                N[row,col] = 64
+                weak_list.append((row, col))
+            else:
+                N[row,col] = 0
+    
+    # edge strengthening
+    while len(strong_queue) > 0:
+        # get pixel at head
+        px = strong_queue[-1]
+    
+        # remove the pixel from the queue
+        strong_queue.pop(-1)
+            
+        # begin processing
+        N[px[0], px[1]] = 255
+        for i in range(-1,2):
+            for j in range(-1,2):
+                # use our weak flag value to speed things up
+                if N[px[0]+i, px[1]+j] == 64:
+                    # set it to the strong-but-not-processed value (which is unused due to the queue)
+                    N[px[0]+i, px[1]+j] = 128
+                    
+                    # pop the pixel from the weak_list and add it to the queue
+                    weak_list.pop(weak_list.index((px[0]+i, px[1]+j)))
+                    strong_queue.append((px[0]+i, px[1]+j))
+    
+    # cull unverified weak edges
+    for px in weak_list:
+        N[px[0], px[1]] = 0
+        
+    if verbose:
+        cv2.imwrite("out/test_edges.png", N)
+    
+    # build vote-space
+    P = np.zeros(image.shape)
+    for i in range(0, N.shape[0]):
+        for j in range(0, N.shape[1]):
+            if N[i,j] == 255:
+                theta = phi[i,j]
+                if theta  in r_table.keys():
+                    for rho in r_table[theta]:
+                        p = (i-rho[0], j-rho[1])
+                        if -1 < p[0] < N.shape[0] and -1 < p[1] < N.shape[1]:
+                            P[p] += r_table[theta][rho]
+                            
+    if verbose:
+            cv2.imwrite("out/test_votes.png", P)
+            
+    return P
 
 def getPeaks(accumulator):
     return []
