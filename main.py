@@ -19,8 +19,8 @@ def main(argv):
         sys.exit(2)
     
     # assume a square kernel
-    kernel_size = 20
-    sigma = 5
+    kernel_size = 5
+    sigma = 1
     image = 'test/test_img001.png'
     verbose = False
     noise = 0
@@ -69,23 +69,35 @@ def main(argv):
     # Force kernels to be odd
     if kernel_size % 2 == 0:
         kernel_size = kernel_size + 1
+        
+    G = Gaussian2D(kernel_size, sigma)
+    pad_amount = int((kernel_size-1))
     
-    # load reference images
+    # load and blur reference images
+    start = timer()
     refs = []
     for filename in os.listdir("ref/"):
-        refs.append(cv2.cvtColor(cv2.imread("ref/" + filename, cv2.IMREAD_COLOR), cv2.COLOR_BGR2GRAY))
+        img = cv2.cvtColor(cv2.imread("ref/" + filename, cv2.IMREAD_COLOR), cv2.COLOR_BGR2GRAY)
+        pad = pad_array(img, pad_amount)
+        refs.append((image_filter2d(pad, G)[pad_amount:pad_amount+img.shape[0], pad_amount:pad_amount+img.shape[1]]).round(decimals=2))
+    
+    # load test image
+    img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
+    pad = pad_array(img, pad_amount)
+    x = (image_filter2d(pad, G)[pad_amount:pad_amount+img.shape[0], pad_amount:pad_amount+img.shape[1]]).round(decimals=2)
+    end = timer()
+    log("Time taken for loading and pre-processing images: {}".format(end-start))
     
     # build r-table
     start = timer()
-    table = buildRtable(refs, (140,180), verbose)
+    table = buildRtable(refs, (140,180), (50,40), verbose)
     end = timer()
     log("Time taken to build r-table: {}".format(end-start))
     
     
     # build accumulator
-    img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
     start = timer()
-    accum = genAccumulator(img, table, verbose)
+    accum = genAccumulator(x, table, (50,40), verbose)
     end = timer()
     log("Time taken to build accumulator: {}".format(end-start))
     

@@ -152,12 +152,12 @@ def neighbors(image, p, connectedness=8):
     return n
     
     
-def buildRtable(images, point, verbose=False):
+def buildRtable(images, point, threshold, verbose=False):
     r_table = {}
+    index = 0
     for img in images:
         # gradient calculations
         phi,M = gradient_calc(img)
-        threshold = (40, 20)
         
         # we can ready some queues for threshold information
         strong_queue = []
@@ -216,7 +216,8 @@ def buildRtable(images, point, verbose=False):
             N[px[0], px[1]] = 0
             
         if verbose:
-            cv2.imwrite("out/ref_edges.png", N)
+            cv2.imwrite("out/{}_ref_edges.png".format(index), N)
+        index +=1
             
         # build r-table
         for i in range(0, N.shape[0]):
@@ -234,11 +235,10 @@ def buildRtable(images, point, verbose=False):
     return r_table
     
     
-def genAccumulator(image, r_table, verbose=False):
+def genAccumulator(image, r_table, threshold, verbose=False):
     ''' Find boundaries in image '''
     # gradient calculations
     phi,M = gradient_calc(image)
-    threshold = (40, 20)
     
     # we can ready some queues for threshold information
     strong_queue = []
