@@ -1,5 +1,6 @@
 # ignore unlicensed images
 ref/
+test/
 
 # ignore compiled Python files
 __pycache__
