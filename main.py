@@ -19,8 +19,8 @@ def main(argv):
         sys.exit(2)
     
     # assume a square kernel
-    kernel_size = 5
-    sigma = 1
+    kernel_size = 3
+    sigma = 1.25
     image = 'test/test_img001.png'
     verbose = False
     noise = 0
@@ -90,19 +90,48 @@ def main(argv):
     
     # build r-table
     start = timer()
-    table = buildRtable(refs, (140,180), (50,40), verbose)
+    table = buildRtable(refs, (refs[0].shape[0]/2,refs[0].shape[1]/2), (50,35), verbose)
     end = timer()
     log("Time taken to build r-table: {}".format(end-start))
     
-    
     # build accumulator
     start = timer()
-    accum = genAccumulator(x, table, (50,40), verbose)
+    rotations = range(-10, 11, 1)
+    scales = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85]
+    accum = genAccumulator(x, table, (55,40), rotations, scales, verbose)
     end = timer()
     log("Time taken to build accumulator: {}".format(end-start))
     
+    print(accum.shape)
     
+    if verbose:
+        for s in scales:
+            path = "out/" + str(s)
+            if not os.path.exists(path):
+                os.mkdir(path)
+            for t in rotations:
+                cv2.imwrite("out/" + str(s) + "/test_votes_{0}_{1}.png".format(t,s), (accum[:,:,rotations.index(t),scales.index(s)]*255/np.max(accum[:,:,rotations.index(t),scales.index(s)])).astype(np.uint8))
+            
+    # find peaks
+    start = timer()
+    peaks = getPeaks(accum, np.max(accum)/2)
+    end = timer()
+    log("Time taken to find peaks: {}".format(end-start))
     
+    if verbose:
+        cv2.imwrite("out/test_peaks.png", (peaks*255/np.max(peaks)).astype(np.uint8))
+    
+    # choose the most likely peak
+    max = np.amax(peaks, axis=None)
+    maxi = np.argmax(peaks, axis=None)
+    index_max = np.unravel_index(maxi, peaks.shape)
+    print(index_max)
+    print("Scale for max: {0}, rotation for max: {1}".format(scales[index_max[3]], rotations[index_max[2]]))
+    
+    # save the final image
+    img_BGR = cv2.imread(image, cv2.IMREAD_COLOR)
+    result = displayResult(img_BGR, (index_max[0], index_max[1]), rotations[index_max[2]], scales[index_max[3]])
+    cv2.imwrite("out/test_marked.png", result)
             
 if __name__ == "__main__":
     main(sys.argv[1:])

@@ -23,9 +23,12 @@ def log(message, file=None):
         with open(file, 'a') as f:
             f.write(message + '\n')
 
+
 def pad_array(img, amount, method='replication'):
     method = method
     amount = amount
+    if amount < 1:
+        return copy.deepcopy(img)
     t_img = np.array(img)
     re_img = np.zeros([img.shape[0]+2*amount, img.shape[1]+2*amount])
     re_img[amount:img.shape[0]+amount, amount:img.shape[1]+amount] = t_img
@@ -38,7 +41,8 @@ def pad_array(img, amount, method='replication'):
         re_img[:, -1*amount:] = np.flip(re_img[:, -2*amount:-amount], axis=1) # bottom
         
     return re_img
-        
+
+
 def image_filter2d(img, kernel):
     # establish useful values
     imx = img.shape[0]
@@ -62,7 +66,8 @@ def image_filter2d(img, kernel):
                 for b in range(0, ky):
                     re_img[row, col] = re_img[row,col] + pad_img[row+a-center[0]+1, col+b-center[1]+1]*kernel[a,b]
     return re_img[kx:imx+kx, ky:imy+ky]
-    
+
+
 def gradient_calc(image):
     # get some arrays ready
     sobx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
@@ -90,11 +95,11 @@ def gradient_calc(image):
             # magnitude
             M[i-1, j-1] = (dx**2+dy**2)**0.5
     return phi, M
-        
+
 
 def Gaussian2D(size, sigma):
     # simplest case is where there is no Gaussian
-    if size==1:
+    if size==0 or size==1:
         return np.array([[0,0,0],[0,1,0],[0,0,0]])
 
     # parameters
@@ -223,7 +228,7 @@ def buildRtable(images, point, threshold, verbose=False):
         for i in range(0, N.shape[0]):
             for j in range(0, N.shape[1]):
                 if N[i,j] == 255:
-                    theta = phi[i,j]
+                    theta = round(phi[i,j], 1)
                     rho = (i-point[0], j-point[1]) # just a displacement vector
                     if theta in r_table.keys():
                         if rho not in r_table[theta]:
@@ -235,7 +240,7 @@ def buildRtable(images, point, threshold, verbose=False):
     return r_table
     
     
-def genAccumulator(image, r_table, threshold, verbose=False):
+def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose=False):
     ''' Find boundaries in image '''
     # gradient calculations
     phi,M = gradient_calc(image)
@@ -300,26 +305,39 @@ def genAccumulator(image, r_table, threshold, verbose=False):
         cv2.imwrite("out/test_edges.png", N)
     
     # build vote-space
-    P = np.zeros(image.shape)
+    P = np.zeros((image.shape[0], image.shape[1], len(rotations), len(scales)))
     for i in range(0, N.shape[0]):
         for j in range(0, N.shape[1]):
             if N[i,j] == 255:
-                theta = phi[i,j]
-                if theta  in r_table.keys():
+                theta = round(phi[i,j],1)
+                if theta in r_table.keys():
                     for rho in r_table[theta]:
-                        p = (i-rho[0], j-rho[1])
-                        if -1 < p[0] < N.shape[0] and -1 < p[1] < N.shape[1]:
-                            P[p] += r_table[theta][rho]
-                            
-    if verbose:
-            cv2.imwrite("out/test_votes.png", P)
-            
+                        p = (int(i-rho[0]), int(j-rho[1]))
+                        for t in rotations:
+                            tr = t*np.pi/180
+                            cos = np.cos(tr)
+                            sin = np.sin(tr)
+                            for s in scales:
+                                xr = int(i - (rho[0]*cos - rho[1]*sin)*s)
+                                yr = int(j - (rho[0]*sin + rho[1]*cos)*s)
+                                if -1 < xr < N.shape[0] and -1 < yr < N.shape[1]:
+                                    P[xr, yr, rotations.index(t), scales.index(s)] += r_table[theta][rho]
+ 
     return P
 
-def getPeaks(accumulator):
-    return []
+
+def getPeaks(accumulator, threshold):
+    peaks = (accumulator >= threshold) * accumulator
+    return peaks
     
     
-def displayResult(image, center):
-    box = (10, 10, 10, 10)
-    return cv2.rectangle(image, (center-box[0]/2, center-box[1]/2), (center+box[0]/2, center+box[1]/2), (0,0,255), 2)
+def displayResult(image, center, rotation, scale):
+    box = (280*scale, 360*scale)
+    uleft = (int(center[0]-280*scale/2), int(center[1]-360*scale/2))
+    uright = (int(center[0]+280*scale/2), int(center[1]+360*scale/2))
+    rect = (uleft, box, rotation)
+    box = cv2.boxPoints(rect)
+    box = box.astype(int)
+    
+    
+    return cv2.drawContours(image, [box], 0, (0,0,255),2)
