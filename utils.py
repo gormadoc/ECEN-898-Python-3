@@ -15,6 +15,7 @@ import numpy as np
 import copy
 import cv2
 
+from numba import jit, cuda
 
 def log(message, file=None):
     if not file:
@@ -25,23 +26,21 @@ def log(message, file=None):
 
 
 def pad_array(img, amount, method='replication'):
-    method = method
-    amount = amount
     if amount < 1:
         return copy.deepcopy(img)
-    t_img = np.array(img)
     re_img = np.zeros([img.shape[0]+2*amount, img.shape[1]+2*amount])
-    re_img[amount:img.shape[0]+amount, amount:img.shape[1]+amount] = t_img
+    re_img[amount:img.shape[0]+amount, amount:img.shape[1]+amount] = img
     if method == 'zero':
         pass # already that way
     elif method == 'replication':
-        re_img[0:amount,amount:img.shape[1]+amount] = np.flip(img[0:amount, :], axis=0) # left
-        re_img[-1*amount:-1, amount:img.shape[1]+amount] = np.flip(img[-1*amount:-1, :], axis=0) # right
-        re_img[:, 0:amount] = np.flip(re_img[:, amount:2*amount], axis=1) # top
-        re_img[:, -1*amount:] = np.flip(re_img[:, -2*amount:-amount], axis=1) # bottom
+        re_img[0:amount,amount:img.shape[1]+amount] = np.flip(img[0:amount, :], axis=0) # top
+        re_img[-1*amount:, amount:img.shape[1]+amount] = np.flip(img[-2*amount:-amount, :], axis=0) # bottom
+        re_img[:, 0:amount] = np.flip(re_img[:, amount:2*amount], axis=1) # left
+        re_img[:, -1*amount:] = np.flip(re_img[:, -2*amount:-amount], axis=1) # right
         
     return re_img
 
+    
 
 def image_filter2d(img, kernel):
     # establish useful values
@@ -67,39 +66,10 @@ def image_filter2d(img, kernel):
                     re_img[row, col] = re_img[row,col] + pad_img[row+a-center[0]+1, col+b-center[1]+1]*kernel[a,b]
     return re_img[kx:imx+kx, ky:imy+ky]
 
-
-def gradient_calc(image):
-    # get some arrays ready
-    sobx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
-    soby = sobx.transpose()
-    phi = np.zeros(image.shape)
-    M = np.zeros(image.shape)
     
-    # need to slightly pad but we don't need to calculate the new borders
-    img = pad_array(image, 1)
-    x, y = img.shape
-    for i in range(1, x-2):
-        for j in range(1, y-2):
-            # calculate both at once rather than separately
-            dx = -1*img[i-1,j-1] -2*img[i-1,j] -1*img[i-1,j+1] +img[i+1,j-1] +2*img[i+1,j] +img[i+1,j+1] 
-            dy = -1*img[i-1,j-1] -2*img[i,j-1] -1*img[i+1,j-1] +img[i-1,j+1] +2*img[i,j+1] +img[i+1,j+1]
-            
-            # division by zero is undefined
-            if dx == 0 and dy > 0:
-                phi[i,j] = 90
-            elif dx == 0 and dy < 0:
-                phi[i,j] = -90
-            else:
-                phi[i,j] = np.arctan2(dy,dx)/np.pi*180
-                
-            # magnitude
-            M[i-1, j-1] = (dx**2+dy**2)**0.5
-    return phi, M
-
-
 def Gaussian2D(size, sigma):
     # simplest case is where there is no Gaussian
-    if size==0 or size==1:
+    if size==1 or sigma==0:
         return np.array([[0,0,0],[0,1,0],[0,0,0]])
 
     # parameters
@@ -127,7 +97,47 @@ def Gaussian2D(size, sigma):
     H = H / np.sum(np.concatenate(H))
     return H
 
+    
 
+def blur(image, size, sigma):
+    pad_amount = int((size-1)/2)
+    pad = pad_array(image, pad_amount)
+    G = Gaussian2D(size, sigma)
+    
+    # iterate over region of interest
+    re_img = np.zeros(pad.shape)
+    for row in range(pad_amount, pad.shape[0]-pad_amount):
+        for col in range(pad_amount, pad.shape[0]-pad_amount):
+            # iterate over kernel elements
+            for a in range(-int((size-1)/2), int((size-1)/2)+1):
+                for b in range(-int((size-1)/2), int((size-1)/2)+1):
+                    re_img[row, col] += pad[row+a, col+b]*G[a,b]
+    return re_img[pad_amount:-pad_amount, pad_amount:-pad_amount]
+    
+
+def gradient_calc(image):
+    # get some arrays ready
+    sobx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+    soby = sobx.transpose()
+    phi = np.zeros(image.shape)
+    M = np.zeros(image.shape)
+    
+    # need to slightly pad but we don't need to calculate the new borders
+    img = pad_array(image, 1)
+    x, y = img.shape
+    for i in range(1, x-2):
+        for j in range(1, y-2):
+            # calculate both at once rather than separately
+            dx = -1*img[i-1,j-1] -2*img[i-1,j] -1*img[i-1,j+1] +img[i+1,j-1] +2*img[i+1,j] +img[i+1,j+1] 
+            dy = -1*img[i-1,j-1] -2*img[i,j-1] -1*img[i+1,j-1] +img[i-1,j+1] +2*img[i,j+1] +img[i+1,j+1]
+            
+            phi[i-1,j-1] = np.arctan2(dy,dx)/np.pi*180
+                
+            # magnitude
+            M[i-1, j-1] = (dx**2+dy**2)**0.5
+    return phi, M
+    
+    
 def neighbors(image, p, connectedness=8):
     X,Y = image.shape
     x = p[0]
@@ -182,7 +192,7 @@ def buildRtable(images, point, threshold, verbose=False):
                     coords = [[row, col+1], [row, col-1]]
                 else: # 3, 7
                     coords = [[row-1, col+1], [row+1, col-1]]
-                if M[row, col] <= M[coords[0][0], coords[0][1]] or M[row, col] <= M[coords[1][0], coords[1][1]]:
+                if M[row, col] < M[coords[0][0], coords[0][1]] or M[row, col] < M[coords[1][0], coords[1][1]]:
                     N[row,col] = 0
                 
                 # threshold control; values just for informative picture
@@ -221,7 +231,10 @@ def buildRtable(images, point, threshold, verbose=False):
             N[px[0], px[1]] = 0
             
         if verbose:
-            cv2.imwrite("out/{}_ref_edges.png".format(index), N)
+            cv2.imwrite("out/{}_ref.png".format(index), img.astype(np.uint8))
+            cv2.imwrite("out/{}_ref_edges.png".format(index), N.astype(np.uint8))
+            cv2.imwrite("out/{}_ref_grad.png".format(index), M.astype(np.uint8))
+            cv2.imwrite("out/{}_ref_phi.png".format(index), phi.astype(np.uint8)+180)
         index +=1
             
         # build r-table
@@ -239,7 +252,7 @@ def buildRtable(images, point, threshold, verbose=False):
                         r_table[theta] = {rho: M[i,j]}
     return r_table
     
-    
+
 def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose=False):
     ''' Find boundaries in image '''
     # gradient calculations
@@ -253,7 +266,7 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
     N = copy.deepcopy(M)
     for row in range(1, M.shape[0]-1):
         for col in range(1, M.shape[1]-1):
-            p = phi[row,col]
+            p = phi[row,col] % 90
             # eight cases decomposed into four by arctan range (-90deg<->90deg)
             if p < 22.5 and p >= -22.5: # 4,6
                 coords = [[row-1, col], [row+1, col]]
@@ -306,8 +319,8 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
     
     # build vote-space
     P = np.zeros((image.shape[0], image.shape[1], len(rotations), len(scales)))
-    for i in range(0, N.shape[0]):
-        for j in range(0, N.shape[1]):
+    for i in range(N.shape[0]):
+        for j in range(N.shape[1]):
             if N[i,j] == 255:
                 theta = round(phi[i,j],1)
                 if theta in r_table.keys():
@@ -325,16 +338,21 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
  
     return P
 
-
+    
 def getPeaks(accumulator, threshold):
     peaks = (accumulator >= threshold) * accumulator
+    
+    G = Gaussian2D(5, 1)
+    for t in range(peaks.shape[2]-1):
+        for s in range(peaks.shape[3]-1):
+            peaks[:,:,t,s] = image_filter2d(peaks[:,:,t,s], G)
     return peaks
     
     
-def displayResult(image, center, rotation, scale):
-    box = (280*scale, 360*scale)
-    uleft = (int(center[0]-280*scale/2), int(center[1]-360*scale/2))
-    uright = (int(center[0]+280*scale/2), int(center[1]+360*scale/2))
+def displayResult(image, center, size, rotation, scale):
+    box = (size[0]*scale, size[1]*scale)
+    uleft = (int(center[0]-box[0]/2), int(center[1]-box[1]/2))
+    uright = (int(center[0]+box[0]/2), int(center[1]+box[1]/2))
     rect = (uleft, box, rotation)
     box = cv2.boxPoints(rect)
     box = box.astype(int)

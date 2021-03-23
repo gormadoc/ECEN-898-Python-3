@@ -20,8 +20,8 @@ def main(argv):
     
     # assume a square kernel
     kernel_size = 3
-    sigma = 1.25
-    image = 'test/test_img001.png'
+    sigma = 0
+    image = 'test/rect.png'#test_img001.png'
     verbose = False
     noise = 0
     
@@ -69,22 +69,21 @@ def main(argv):
     # Force kernels to be odd
     if kernel_size % 2 == 0:
         kernel_size = kernel_size + 1
-        
-    G = Gaussian2D(kernel_size, sigma)
-    pad_amount = int((kernel_size-1))
     
     # load and blur reference images
     start = timer()
     refs = []
-    for filename in os.listdir("ref/"):
-        img = cv2.cvtColor(cv2.imread("ref/" + filename, cv2.IMREAD_COLOR), cv2.COLOR_BGR2GRAY)
-        pad = pad_array(img, pad_amount)
-        refs.append((image_filter2d(pad, G)[pad_amount:pad_amount+img.shape[0], pad_amount:pad_amount+img.shape[1]]).round(decimals=2))
+    for filename in os.listdir("ref2/"):
+        img = cv2.imread("ref2/" + filename, cv2.IMREAD_GRAYSCALE)
+        refs.append(blur(img, kernel_size, sigma).round(decimals=2))
+        if verbose:
+            cv2.imwrite('out/' + filename+"blurred.png", refs[-1])
     
     # load test image
     img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
-    pad = pad_array(img, pad_amount)
-    x = (image_filter2d(pad, G)[pad_amount:pad_amount+img.shape[0], pad_amount:pad_amount+img.shape[1]]).round(decimals=2)
+    x = blur(img, kernel_size, sigma).round(decimals=2)
+    if verbose:
+        cv2.imwrite("out/test_blurred.png", x)
     end = timer()
     log("Time taken for loading and pre-processing images: {}".format(end-start))
     
@@ -93,11 +92,12 @@ def main(argv):
     table = buildRtable(refs, (refs[0].shape[0]/2,refs[0].shape[1]/2), (50,35), verbose)
     end = timer()
     log("Time taken to build r-table: {}".format(end-start))
+    #print(table)
     
     # build accumulator
     start = timer()
     rotations = range(-10, 11, 1)
-    scales = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85]
+    scales = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, .9, .95, 1, 1.1, 1.2]
     accum = genAccumulator(x, table, (55,40), rotations, scales, verbose)
     end = timer()
     log("Time taken to build accumulator: {}".format(end-start))
@@ -130,8 +130,13 @@ def main(argv):
     
     # save the final image
     img_BGR = cv2.imread(image, cv2.IMREAD_COLOR)
-    result = displayResult(img_BGR, (index_max[0], index_max[1]), rotations[index_max[2]], scales[index_max[3]])
-    cv2.imwrite("out/test_marked.png", result)
+    box_size = (48,36)#(280,360)
+    result = displayResult(img_BGR, (index_max[0], index_max[1]), box_size, rotations[index_max[2]], scales[index_max[3]])
+    red_dot = copy.deepcopy(img_BGR)
+    print(index_max[0], index_max[1])
+    cv2.imwrite("out/test_marked1.png", red_dot)
+    red_dot[index_max[0], index_max[1]] = (0,0,255)
+    cv2.imwrite("out/test_marked2.png", red_dot)
             
 if __name__ == "__main__":
     main(sys.argv[1:])
