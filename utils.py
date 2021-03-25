@@ -41,7 +41,6 @@ def pad_array(img, amount, method='replication'):
     return re_img
 
     
-
 def image_filter2d(img, kernel):
     # establish useful values
     imx = img.shape[0]
@@ -66,6 +65,15 @@ def image_filter2d(img, kernel):
                     re_img[row, col] = re_img[row,col] + pad_img[row+a-center[0]+1, col+b-center[1]+1]*kernel[a,b]
     return re_img[kx:imx+kx, ky:imy+ky]
 
+
+def fft_filter2d(img, kernel):
+    G = np.fft.fft2(img)
+    h = np.zeros(G.shape)
+    h[0:kernel_size//2, 0:kernel_size//2] = kernel[kernel_size//2:, kernel_size//2
+    H = np.fft.fft2(kernel, s=G.shape)
+    F = G*np.conjugate(H)
+    cv2.imwrite("out/fft_out.png", H.real.astype(np.uint8))
+    return np.fft.ifft(F).real
     
 def Gaussian2D(size, sigma):
     # simplest case is where there is no Gaussian
@@ -96,14 +104,13 @@ def Gaussian2D(size, sigma):
     # normalize the matrix
     H = H / np.sum(np.concatenate(H))
     return H
-
     
 
 def blur(image, size, sigma):
     pad_amount = int((size-1)/2)
     pad = pad_array(image, pad_amount)
     G = Gaussian2D(size, sigma)
-    
+    return fft_filter2d(image, G).real
     # iterate over region of interest
     re_img = np.zeros(pad.shape)
     for row in range(pad_amount, pad.shape[0]-pad_amount):
@@ -340,13 +347,16 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
 
     
 def getPeaks(accumulator, threshold):
-    peaks = (accumulator >= threshold) * accumulator
-    
-    G = Gaussian2D(5, 1)
+    peaks = copy.deepcopy(accumulator)
+    size = 3
+    B = np.zeros((size,size)) + 1/(size*size)
+    print(B)
     for t in range(peaks.shape[2]-1):
         for s in range(peaks.shape[3]-1):
-            peaks[:,:,t,s] = image_filter2d(peaks[:,:,t,s], G)
-    return peaks
+            peaks[:,:,t,s] = fft_filter2d(peaks[:,:,t,s].astype(float), B)
+            
+    peaks = (peaks >= threshold) * peaks
+    return peaks.astype(np.uint8)
     
     
 def displayResult(image, center, size, rotation, scale):

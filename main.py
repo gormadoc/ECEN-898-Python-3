@@ -92,7 +92,6 @@ def main(argv):
     table = buildRtable(refs, (refs[0].shape[0]/2,refs[0].shape[1]/2), (50,35), verbose)
     end = timer()
     log("Time taken to build r-table: {}".format(end-start))
-    #print(table)
     
     # build accumulator
     start = timer()
@@ -119,7 +118,12 @@ def main(argv):
     log("Time taken to find peaks: {}".format(end-start))
     
     if verbose:
-        cv2.imwrite("out/test_peaks.png", (peaks*255/np.max(peaks)).astype(np.uint8))
+        for s in scales:
+            path = "out/" + str(s)
+            if not os.path.exists(path):
+                os.mkdir(path)
+            for t in rotations:
+                cv2.imwrite("out/" + str(s) + "/test_votes_{0}_{1}_peaks.png".format(t,s), (peaks[:,:,rotations.index(t),scales.index(s)]*255/np.max(peaks[:,:,rotations.index(t),scales.index(s)])).astype(np.uint8))
     
     # choose the most likely peak
     max = np.amax(peaks, axis=None)
@@ -127,6 +131,9 @@ def main(argv):
     index_max = np.unravel_index(maxi, peaks.shape)
     print(index_max)
     print("Scale for max: {0}, rotation for max: {1}".format(scales[index_max[3]], rotations[index_max[2]]))
+    
+    if verbose:
+        cv2.imwrite("out/test_peaks.png", (peaks[:,:,index_max[2],index_max[3]]*255/np.max(peaks[:,:,index_max[2],index_max[3]])).astype(np.uint8))
     
     # save the final image
     img_BGR = cv2.imread(image, cv2.IMREAD_COLOR)
