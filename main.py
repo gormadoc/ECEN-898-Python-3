@@ -19,9 +19,9 @@ def main(argv):
         sys.exit(2)
     
     # assume a square kernel
-    kernel_size = 3
-    sigma = 0
-    image = 'test/rect.png'#test_img001.png'
+    kernel_size = 5
+    sigma = 2
+    image = 'test/test_img002.png'
     verbose = False
     noise = 0
     
@@ -73,8 +73,8 @@ def main(argv):
     # load and blur reference images
     start = timer()
     refs = []
-    for filename in os.listdir("ref2/"):
-        img = cv2.imread("ref2/" + filename, cv2.IMREAD_GRAYSCALE)
+    for filename in os.listdir("ref/"):
+        img = cv2.imread("ref/" + filename, cv2.IMREAD_GRAYSCALE)
         refs.append(blur(img, kernel_size, sigma).round(decimals=2))
         if verbose:
             cv2.imwrite('out/' + filename+"blurred.png", refs[-1])
@@ -96,7 +96,7 @@ def main(argv):
     # build accumulator
     start = timer()
     rotations = range(-10, 11, 1)
-    scales = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, .9, .95, 1, 1.1, 1.2]
+    scales = [0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, .9, .95, 1, 1.1, 1.2]
     accum = genAccumulator(x, table, (55,40), rotations, scales, verbose)
     end = timer()
     log("Time taken to build accumulator: {}".format(end-start))
@@ -123,7 +123,7 @@ def main(argv):
             if not os.path.exists(path):
                 os.mkdir(path)
             for t in rotations:
-                cv2.imwrite("out/" + str(s) + "/test_votes_{0}_{1}_peaks.png".format(t,s), (peaks[:,:,rotations.index(t),scales.index(s)]*255/np.max(peaks[:,:,rotations.index(t),scales.index(s)])).astype(np.uint8))
+                cv2.imwrite("out/" + str(s) + "/test_votes_{0}_{1}_peaks.png".format(t,s), (peaks[:,:,rotations.index(t),scales.index(s)]).astype(np.uint8))
     
     # choose the most likely peak
     max = np.amax(peaks, axis=None)
@@ -131,19 +131,20 @@ def main(argv):
     index_max = np.unravel_index(maxi, peaks.shape)
     print(index_max)
     print("Scale for max: {0}, rotation for max: {1}".format(scales[index_max[3]], rotations[index_max[2]]))
+    print("Value of max: {0}".format(peaks[index_max]))
     
     if verbose:
-        cv2.imwrite("out/test_peaks.png", (peaks[:,:,index_max[2],index_max[3]]*255/np.max(peaks[:,:,index_max[2],index_max[3]])).astype(np.uint8))
+        cv2.imwrite("out/test_peaks.png", (peaks[:,:,index_max[2],index_max[3]]).astype(np.uint8))
     
     # save the final image
     img_BGR = cv2.imread(image, cv2.IMREAD_COLOR)
-    box_size = (48,36)#(280,360)
+    box_size = (360,280)
     result = displayResult(img_BGR, (index_max[0], index_max[1]), box_size, rotations[index_max[2]], scales[index_max[3]])
-    red_dot = copy.deepcopy(img_BGR)
+    green_dot = copy.deepcopy(img_BGR)
     print(index_max[0], index_max[1])
-    cv2.imwrite("out/test_marked1.png", red_dot)
-    red_dot[index_max[0], index_max[1]] = (0,0,255)
-    cv2.imwrite("out/test_marked2.png", red_dot)
+    cv2.imwrite("out/test_marked1.png", green_dot)
+    green_dot[index_max[0]-1:index_max[0]+2, index_max[1]-1:index_max[1]+2] = (0,255,0)
+    cv2.imwrite("out/test_marked2.png", green_dot)
             
 if __name__ == "__main__":
     main(sys.argv[1:])

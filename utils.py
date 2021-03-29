@@ -14,6 +14,7 @@ import math
 import numpy as np
 import copy
 import cv2
+from scipy.signal import correlate2d
 
 from numba import jit, cuda
 
@@ -69,7 +70,7 @@ def image_filter2d(img, kernel):
 def fft_filter2d(img, kernel):
     G = np.fft.fft2(img)
     h = np.zeros(G.shape)
-    h[0:kernel_size//2, 0:kernel_size//2] = kernel[kernel_size//2:, kernel_size//2
+    h[0:kernel_size//2, 0:kernel_size//2] = kernel[kernel_size//2:, kernel_size//2]
     H = np.fft.fft2(kernel, s=G.shape)
     F = G*np.conjugate(H)
     cv2.imwrite("out/fft_out.png", H.real.astype(np.uint8))
@@ -107,10 +108,10 @@ def Gaussian2D(size, sigma):
     
 
 def blur(image, size, sigma):
-    pad_amount = int((size-1)/2)
-    pad = pad_array(image, pad_amount)
+    #pad_amount = int((size-1)/2)
+    #pad = pad_array(image, pad_amount)
     G = Gaussian2D(size, sigma)
-    return fft_filter2d(image, G).real
+    return correlate2d(image, G, mode='same', boundary='symm')
     # iterate over region of interest
     re_img = np.zeros(pad.shape)
     for row in range(pad_amount, pad.shape[0]-pad_amount):
@@ -348,12 +349,12 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
     
 def getPeaks(accumulator, threshold):
     peaks = copy.deepcopy(accumulator)
-    size = 3
-    B = np.zeros((size,size)) + 1/(size*size)
+    size = 5
+    B = Gaussian2D(2, 5)#np.zeros((size,size)) + 1/(size*size)
     print(B)
     for t in range(peaks.shape[2]-1):
         for s in range(peaks.shape[3]-1):
-            peaks[:,:,t,s] = fft_filter2d(peaks[:,:,t,s].astype(float), B)
+            peaks[:,:,t,s] = correlate2d(peaks[:,:,t,s].astype(float), B, mode='same', boundary='symm')
             
     peaks = (peaks >= threshold) * peaks
     return peaks.astype(np.uint8)
