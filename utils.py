@@ -108,19 +108,8 @@ def Gaussian2D(size, sigma):
     
 
 def blur(image, size, sigma):
-    #pad_amount = int((size-1)/2)
-    #pad = pad_array(image, pad_amount)
     G = Gaussian2D(size, sigma)
     return correlate2d(image, G, mode='same', boundary='symm')
-    # iterate over region of interest
-    re_img = np.zeros(pad.shape)
-    for row in range(pad_amount, pad.shape[0]-pad_amount):
-        for col in range(pad_amount, pad.shape[0]-pad_amount):
-            # iterate over kernel elements
-            for a in range(-int((size-1)/2), int((size-1)/2)+1):
-                for b in range(-int((size-1)/2), int((size-1)/2)+1):
-                    re_img[row, col] += pad[row+a, col+b]*G[a,b]
-    return re_img[pad_amount:-pad_amount, pad_amount:-pad_amount]
     
 
 def gradient_calc(image):
@@ -239,7 +228,6 @@ def buildRtable(images, point, threshold, verbose=False):
             N[px[0], px[1]] = 0
             
         if verbose:
-            cv2.imwrite("out/{}_ref.png".format(index), img.astype(np.uint8))
             cv2.imwrite("out/{}_ref_edges.png".format(index), N.astype(np.uint8))
             cv2.imwrite("out/{}_ref_grad.png".format(index), M.astype(np.uint8))
             cv2.imwrite("out/{}_ref_phi.png".format(index), phi.astype(np.uint8)+180)
@@ -349,24 +337,24 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
     
 def getPeaks(accumulator, threshold):
     peaks = copy.deepcopy(accumulator)
-    size = 5
-    B = Gaussian2D(2, 5)#np.zeros((size,size)) + 1/(size*size)
-    print(B)
+    size = 25
+    B = np.zeros((size,size)) + 1/(size*size)#Gaussian2D(5, 2)#
     for t in range(peaks.shape[2]-1):
         for s in range(peaks.shape[3]-1):
             peaks[:,:,t,s] = correlate2d(peaks[:,:,t,s].astype(float), B, mode='same', boundary='symm')
             
     peaks = (peaks >= threshold) * peaks
-    return peaks.astype(np.uint8)
+    return peaks
     
     
 def displayResult(image, center, size, rotation, scale):
     box = (size[0]*scale, size[1]*scale)
-    uleft = (int(center[0]-box[0]/2), int(center[1]-box[1]/2))
-    uright = (int(center[0]+box[0]/2), int(center[1]+box[1]/2))
-    rect = (uleft, box, rotation)
-    box = cv2.boxPoints(rect)
-    box = box.astype(int)
+    uleft = (int(center[1]-box[1]/2), int(center[0]-box[0]/2))
+    uright = (int(center[1]+box[1]/2), int(center[0]+box[0]/2))
+    rect = np.zeros(image.shape)
+    rect = cv2.rectangle(image, uright, uleft, (0,0,255), 2)
+    rot = cv2.getRotationMatrix2D(center, rotation, 1.0)
+    #box = box.astype(int)
     
     
-    return cv2.drawContours(image, [box], 0, (0,0,255),2)
+    return rect
