@@ -1,22 +1,10 @@
-#!/usr/bin/env python
-
-# Canny edge detection
-'''
-1. Gaussian filter smoothing (done)
-2. Find intensity gradient
-3. Pre-massage with gradient magnitude thresholding or lower bound cut-off suppression
-4. Apply double threshold to find potential edges
-5. Track edge by hysteresis: finalize detection by suppressing weak edges not connected to strong edges
-'''
-
-import sys, getopt, os
+import sys, os
 import math
 import numpy as np
 import copy
 import cv2
 from scipy.signal import correlate2d
 
-from numba import jit, cuda
 
 def log(message, file=None):
     if not file:
@@ -40,41 +28,7 @@ def pad_array(img, amount, method='replication'):
         re_img[:, -1*amount:] = np.flip(re_img[:, -2*amount:-amount], axis=1) # right
         
     return re_img
-
     
-def image_filter2d(img, kernel):
-    # establish useful values
-    imx = img.shape[0]
-    imy = img.shape[1]
-    kx = kernel.shape[0]
-    ky = kernel.shape[1]
-    if kx % 2 == 1:
-        center = [math.ceil(kx/2), math.ceil(ky/2)]
-    else:
-        center = [int(kx/2) + 1, int(ky/2) + 1]
-        
-    # pad arrays and put image in center
-    re_img = np.zeros([imx+2*kx, imy+2*ky])
-    pad_img = np.zeros([imx+2*kx, imy+2*ky])+np.max(np.max(img))/2
-    pad_img[kx:imx+kx, ky:imy+ky] = img
-    
-    # Perform sum of products
-    for row in range(kx, imx+kx):
-        for col in range(ky, imy+ky):
-            for a in range(0, kx):
-                for b in range(0, ky):
-                    re_img[row, col] = re_img[row,col] + pad_img[row+a-center[0]+1, col+b-center[1]+1]*kernel[a,b]
-    return re_img[kx:imx+kx, ky:imy+ky]
-
-
-def fft_filter2d(img, kernel):
-    G = np.fft.fft2(img)
-    h = np.zeros(G.shape)
-    h[0:kernel_size//2, 0:kernel_size//2] = kernel[kernel_size//2:, kernel_size//2]
-    H = np.fft.fft2(kernel, s=G.shape)
-    F = G*np.conjugate(H)
-    cv2.imwrite("out/fft_out.png", H.real.astype(np.uint8))
-    return np.fft.ifft(F).real
     
 def Gaussian2D(size, sigma):
     # simplest case is where there is no Gaussian
@@ -133,36 +87,7 @@ def gradient_calc(image):
             # magnitude
             M[i-1, j-1] = (dx**2+dy**2)**0.5
     return phi, M
-    
-    
-def neighbors(image, p, connectedness=8):
-    X,Y = image.shape
-    x = p[0]
-    y = p[1]
-    n = []
-    if connectedness == 8:
-        for i in [-1, 0, 1]:
-            # check within x bounds
-            if x+i > -1 and x+i < X:
-                #print(x+i)
-                for j in [-1, 0, 1]:
-                    # check within y bounds
-                    if y+j > -1 and y+j < Y:
-                        #print(y+j)mi
-                        # p is not a neighbor of p
-                        if i != 0 or j != 0:
-                            n.append((x+i,y+j))
-    elif connectedness == 4:
-        if x > 0:
-            n.append((x-1, y))
-        if x < X-1:
-            n.append((x+1, y))
-        if y > 0:
-            n.append((x, y-1))
-        if y < Y-1:
-            n.append((x, y+1))
-    return n
-    
+        
     
 def buildRtable(images, point, threshold, verbose=False):
     r_table = {}
@@ -338,7 +263,7 @@ def genAccumulator(image, r_table, threshold, rotations=[0], scales=[1], verbose
 def getPeaks(accumulator, threshold):
     peaks = copy.deepcopy(accumulator)
     size = 25
-    B = np.zeros((size,size)) + 1/(size*size)#Gaussian2D(5, 2)#
+    B = np.zeros((size,size)) + 1/(size*size)
     for t in range(peaks.shape[2]-1):
         for s in range(peaks.shape[3]-1):
             peaks[:,:,t,s] = correlate2d(peaks[:,:,t,s].astype(float), B, mode='same', boundary='symm')
@@ -353,8 +278,6 @@ def displayResult(image, center, size, rotation, scale):
     uright = (int(center[1]+box[1]/2), int(center[0]+box[0]/2))
     rect = np.zeros(image.shape)
     rect = cv2.rectangle(image, uright, uleft, (0,0,255), 2)
-    rot = cv2.getRotationMatrix2D(center, rotation, 1.0)
-    #box = box.astype(int)
     
     
     return rect

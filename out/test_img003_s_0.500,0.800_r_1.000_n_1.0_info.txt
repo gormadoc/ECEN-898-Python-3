@@ -1,0 +1,9 @@
+Scales: [0.5, 0.55, 0.6, 0.65, 0.7000000000000001, 0.75, 0.8]
+Rotations: [-1.0, -0.8, -0.6, -0.3999999999999999, -0.19999999999999996, 0.0, 0.20000000000000018, 0.40000000000000013, 0.6000000000000001, 0.8, 1.0]
+Time taken for loading and pre-processing images: 0.26972379999999996
+Time taken to build r-table: 5.252055400000001
+Time taken to build accumulator: 9.5942345
+Time taken to find peaks: 34.1252848
+Scale for max: 0.8, rotation for max: -0.3999999999999999
+Value of max: 604.7957620123577, position of maximum: (167, 237)
+Time taken to choose most likely peak: 0.03176170000000411
